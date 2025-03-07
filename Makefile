@@ -2,7 +2,7 @@ NAME	:= VulkanTest
 
 CC	:=	c++
 
-CFLAGS	:= #-Wall -Wextra -Werror
+CFLAGS	:= -std=c++17 #-Wall -Wextra -Werror
 
 LDFLAGS		:=	-lglfw -lvulkan -ldl -pthread -lX11 -lXxf86vm -lXrandr -lXi
 
@@ -10,6 +10,7 @@ IFLAGS		:= -I ./includes
 
 SRCS	:= srcs/app.cpp \
 		   srcs/main.cpp \
+		   srcs/queues.cpp \
 
 ifeq ($(DEBUG), 1)
 	CFLAGS 	+=	-fsanitize=address -static-libsan -D NDEBUG

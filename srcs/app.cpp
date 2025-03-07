@@ -1,12 +1,6 @@
 #include "app.hpp"
-#include <GLFW/glfw3.h>
-#include <cstdint>
 #include <stdexcept>
-#include <vector>
-#include <vulkan/vk_platform.h>
-#include <vulkan/vulkan_extension_inspection.hpp>
 #include <vulkan/vulkan_core.h>
-#include <cstring>
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -26,7 +20,19 @@ bool	checkValidationLayerSupport()
 
 	std::vector<VkLayerProperties> availableLayers(layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-	return (false);
+	for (const char* layerName : validationLayers){
+		bool	layerFound = false;
+
+		for (const auto& layerProperties : availableLayers){
+			if (strcmp(layerName, layerProperties.layerName) == 0){
+				layerFound = true;
+				break;
+			}
+		}
+		if (!layerFound)
+			return (false);
+	}
+	return (true);
 }
 
 std::vector<const char*> getRequiredExtensions(){
@@ -42,15 +48,6 @@ std::vector<const char*> getRequiredExtensions(){
 	return (extensions);
 }
 
-App::App( void )
-{
-	
-}
-
-App::~App( void )
-{
-	
-}
 
 void	App::initWindow( void )
 {
@@ -59,6 +56,36 @@ void	App::initWindow( void )
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanTest", NULL, NULL);
+}
+
+static bool	isDeviceSuitable(VkPhysicalDevice device){
+	queueFamilyIndices indices = findQueueFamilies(device);
+
+	return (indices.isComplete());
+}
+
+void	App::pickPhysicaldevice( void )
+{
+	uint32_t	deviceCount = 0;
+	
+	physicalDevice = VK_NULL_HANDLE;
+	vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+	if (deviceCount == 0){
+		throw std::runtime_error("failed to find  GPUs with Vulkan support!");
+	}
+	std::vector<VkPhysicalDevice> devices(deviceCount);
+	vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+	for (const auto& device : devices){
+		if (isDeviceSuitable(device)){
+			physicalDevice = device;
+			break ;
+		}
+	}
+	if (physicalDevice == VK_NULL_HANDLE){
+		throw std::runtime_error("failed to find a suitable GPU!");
+	}
 }
 
 void	App::createInstance( void )
@@ -84,30 +111,41 @@ void	App::createInstance( void )
 
 	glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-	auto	extensions = getRequiredExtensions();
-	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-	createInfo.ppEnabledExtensionNames = extensions.data();
-	if (enabledValidationLayers){
-		createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-	}
-	else
-		createInfo.enabledLayerCount = 0;
-	
-	std::vector<const char*> requiredExtensions;
-
-	for (uint32_t i = 0; i < glfwExtensionCount; i++) {
-		requiredExtensions.emplace_back(glfwExtensions[i]);
-	}
-	requiredExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-
-	createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-
-	createInfo.enabledExtensionCount = (uint32_t) requiredExtensions.size();
-	createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-
+	createInfo.enabledExtensionCount = glfwExtensionCount;
+	createInfo.ppEnabledExtensionNames = glfwExtensions;
 	if (vkCreateInstance(&createInfo, nullptr, &this->instance) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create instance!");
 	}
+}
+
+void	App::createLogicalDevice( void ){
+	queueFamilyIndices	indices = findQueueFamilies(physicalDevice);
+
+	VkDeviceQueueCreateInfo	queueCreateInfo{};
+	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+	queueCreateInfo.queueCount = 1;
+
+	float	queuePriority = 1.0f;
+	queueCreateInfo.pQueuePriorities = &queuePriority;
+	VkPhysicalDeviceFeatures	deviceFeatures{};
+	VkDeviceCreateInfo		createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	createInfo.pQueueCreateInfos = &queueCreateInfo;
+
+	createInfo.pEnabledFeatures = &deviceFeatures;
+	createInfo.enabledExtensionCount = 0;
+	if (enabledValidationLayers){
+		createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+		createInfo.ppEnabledLayerNames = validationLayers.data();
+	}
+	else
+		createInfo.enabledLayerCount = 0;
+	if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS){
+		throw std::runtime_error("failed to create logical device!");
+	}
+	VkQueue	graphicsQueue;
+	vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 }
 
 void	App::initVulkan( void )
@@ -120,6 +158,8 @@ void	App::initVulkan( void )
 	{
 		std::cout << e.what();
 	}
+	pickPhysicaldevice();
+	createLogicalDevice();
 }
 
 void	App::mainLoop( void )
@@ -130,7 +170,13 @@ void	App::mainLoop( void )
 
 void	App::cleanup( void )
 {
-	vkDestroyInstance(this->instance, nullptr);
+	vkDestroyDevice(device, nullptr);
+    if (instance == VK_NULL_HANDLE) {
+        std::cerr << "ERROR: Instance is NULL before destruction!" << std::endl;
+    } else {
+        vkDestroyInstance(instance, nullptr);
+        std::cout << "Instance destroyed successfully." << std::endl;
+    }
 	glfwDestroyWindow(window);
 	glfwTerminate();
 }
@@ -138,6 +184,7 @@ void	App::cleanup( void )
 void	App::run( void )
 {
 	initWindow();
+	initVulkan();
 	mainLoop();
 	cleanup();
 }
