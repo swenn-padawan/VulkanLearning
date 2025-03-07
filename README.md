@@ -1,2 +1,2 @@
 # VulkanLearning
-This is my attempt to learn vulkan
+First try of Vulkan to do cool stuff!
